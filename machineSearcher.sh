@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Determine script directory for consistent file access
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 #Colours
 greenColour="\e[0;32m\033[1m"
 endColour="\033[0m\e[0m"
@@ -22,6 +25,8 @@ darkGrayColour="\e[1;30m\033[1m"
 
 #GlobalVariables
 main_url="https://docs.google.com/spreadsheets/d/1dzvaGlT_0xnT-PGO27Z_4prHgA8PHIpErmoWdlUrSoA/export?format=csv&gid=0"
+CSV_FILE="$SCRIPT_DIR/s4vi_machines.csv"
+CSV_FILE_TEMP="$SCRIPT_DIR/s4vi_machines_temp.csv"
 
 function ctrl_c(){
 	echo -e "\n\n${lightPurpleColour}[*]${endColour}${whiteColour} Saliendo...${endColour}"; sleep 1
@@ -46,7 +51,7 @@ function searchMachine () {
   local found=0  # Bandera para indicar si se encontró la máquina
 
   # Capturar la salida del comando
-  output=$(mlr --icsv filter 'tolower($["Máquina"]) == tolower("'"$machineName"'")' s4vi_machines.csv 2>/dev/null)
+  output=$(mlr --icsv filter 'tolower($["Máquina"]) == tolower("'"$machineName"'")' $CSV_FILE 2>/dev/null)
 
   # Verificar si hay resultados
   if [ -n "$output" ]; then
@@ -95,7 +100,7 @@ function searchDifficulty () {
       tolower(gsub(gsub($Dificultad, "[áàäâã]", "a"), "[éèëê]", "e")) == "'"$normalized_diff"'" ||
       tolower(gsub(gsub(gsub($Dificultad, "[íìïî]", "i"), "[óòöôõ]", "o"), "[úùüû]", "u")) == "'"$normalized_diff"'" ||
       tolower($Dificultad) == "'"$normalized_diff"'"' \
-    then cut -f Dificultad,Máquina s4vi_machines.csv)
+    then cut -f Dificultad,Máquina $CSV_FILE)
     
     if [ -n "$output" ]; then
       # Aplicar formato si hay resultados
@@ -132,7 +137,7 @@ function searchOS () {
     output=$(mlr --icsv --opprint --ifs ',' put '
       $sist_os_norm = tolower(gsub(gsub(gsub(gsub(gsub($["Sistema Operativo"], "[áàäâã]", "a"), "[éèëê]", "e"), "[íìïî]", "i"), "[óòöôõ]", "o"), "[úùüû]", "u"))
     ' then filter '$sist_os_norm == "'"$normalized_os"'"' \
-    then cut -f "Sistema Operativo",Máquina,Dificultad,"Dirección IP" s4vi_machines.csv 2>/dev/null)
+    then cut -f "Sistema Operativo",Máquina,Dificultad,"Dirección IP" $CSV_FILE 2>/dev/null)
 
     if [ -n "$output" ]; then
       echo "$output" | sed \
@@ -176,7 +181,7 @@ function searchByOSAndDifficulty () {
       $os_norm = tolower(gsub(gsub(gsub(gsub(gsub($["Sistema Operativo"], "[áàäâã]", "a"), "[éèëê]", "e"), "[íìïî]", "i"), "[óòöôõ]", "o"), "[úùüû]", "u"));
       $dif_norm = tolower(gsub(gsub(gsub(gsub(gsub($Dificultad, "[áàäâã]", "a"), "[éèëê]", "e"), "[íìïî]", "i"), "[óòöôõ]", "o"), "[úùüû]", "u"))
     ' then filter '$os_norm == "'"$normalized_os"'" && $dif_norm == "'"$normalized_difficulty"'"' \
-    then cut -f "Sistema Operativo",Máquina,Dificultad,"Dirección IP" s4vi_machines.csv 2>/dev/null)
+    then cut -f "Sistema Operativo",Máquina,Dificultad,"Dirección IP" $CSV_FILE 2>/dev/null)
 
     if [ -n "$output" ]; then
       echo "$output" | sed \
@@ -250,15 +255,15 @@ function searchTechnique () {
 
 
 function updateDb (){
-  if [ ! -f s4vi_machines.csv ]; then
+  if [ ! -f $CSV_FILE ]; then
     tput civis
     echo -e "\n${lightBlueColour} [!]${endColour}${whiteColour} Descargando archivos importantes${endColour}"
-    curl -s -L -o s4vi_machines.csv $main_url
-    tail -n +4 s4vi_machines.csv | sponge s4vi_machines.csv
+    curl -s -L -o $CSV_FILE $main_url
+    tail -n +4 $CSV_FILE | sponge $CSV_FILE
     mlr --icsv --ocsv put '
     $["Técnicas Vistas"] = gsub($["Técnicas Vistas"], "\n", " ");
     $Like = gsub($Like, "\n", " ");
-    ' s4vi_machines.csv | sponge s4vi_machines.csv
+    ' $CSV_FILE | sponge $CSV_FILE 
     sleep 2
     echo -e "\n${lightBlueColour} [!]${endColour}${whiteColour} Todos los archivos descargados${endColour}"
     tput cnorm
@@ -266,20 +271,20 @@ function updateDb (){
   tput civis
   echo -e "\n${lightBlueColour} [!]${endColour}${whiteColour} Comprobando si hay actualizaciones pendientes...${endColour}"
   sleep 1
-  curl -s -L -o s4vi_machines_temp.csv $main_url
-  tail -n +4 s4vi_machines_temp.csv | sponge s4vi_machines_temp.csv
+  curl -s -L -o $CSV_FILE_TEMP $main_url
+  tail -n +4 $CSV_FILE_TEMP | sponge $CSV_FILE_TEMP
   mlr --icsv --ocsv put '
     $["Técnicas Vistas"] = gsub($["Técnicas Vistas"], "\n", " ");
     $Like = gsub($Like, "\n", " ");
-    ' s4vi_machines_temp.csv | sponge s4vi_machines_temp.csv
-  md5_temp_machines=$(md5sum s4vi_machines_temp.csv | awk '{print $1}')
-  md5_machines=$(md5sum s4vi_machines.csv | awk '{print $1}')
+    ' $CSV_FILE_TEMP | sponge $CSV_FILE_TEMP
+  md5_temp_machines=$(md5sum $CSV_FILE_TEMP | awk '{print $1}')
+  md5_machines=$(md5sum $CSV_FILE | awk '{print $1}')
     if [ "$md5_temp_machines" == "$md5_machines"  ]; then
       echo -e "\n${lightBlueColour} [!]${endColour}${whiteColour} No hay actualizaciones${endColour}"
-      rm s4vi_machines_temp.csv
+      rm $CSV_FILE_TEMP
     else  
       echo -e "\n${lightBlueColour} [!]${endColour}${whiteColour} Se han encontrado actualizaciones${endColour}"
-      rm s4vi_machines.csv && mv s4vi_machines_temp.csv s4vi_machines.csv
+      rm $CSV_FILE && mv $CSV_FILE_TEMP $CSV_FILE
       sleep 2 
       echo -e "\n${lightBlueColour} [!]${endColour}${whiteColour} Se han actualizado los datos${endColour}"
     fi
